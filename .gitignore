@@ -1,2 +1,9 @@
 # Rebuild with ./build.sh
 dist/
+
+# Local-only helpers / secrets (not for GitHub)
+/cursor_ah6le
+/cursor_ah6le.pub
+/install_package_remotely
+/install_package_remotely.conf
+/push_to_webserver

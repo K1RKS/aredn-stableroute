@@ -1,0 +1,362 @@
+{%
+/*
+ * StableRoute Tools dialog — path-stability traceroute (side-loaded package).
+ * Resembles Tools → Traceroute; console scrolls for long multi-run reports.
+ */
+%}
+{%
+import * as sr from "stableroute";
+const nodes = mesh.getNodeList();
+const mynode = configuration.getName();
+const hasArednTraceroute = !!fs.access("/usr/bin/aredn-traceroute");
+%}
+<div class="dialog wide">
+    {{_R("tool-header", { label: `StableRoute ${sr.packageVersion()}`, help: false })}}
+    <div class="simple-tool compact client-server">
+        <style>
+            /* Keep this inside .simple-tool so dialog > div:nth-child(2) still flexes. */
+            #ctrl-modal .tool-console.stableroute {
+                min-height: 260px;
+            }
+            #ctrl-modal .tool-console.stableroute pre {
+                overflow: auto scroll;
+                overscroll-behavior: contain;
+            }
+            /*
+             * Stock admin.css targets .cols:first-child / :nth-child(2) for input
+             * alignment. Our <style> is the first child, so re-apply for Target/Source.
+             */
+            #ctrl-modal .simple-tool.client-server > div.cols:nth-of-type(1) > div:nth-child(2),
+            #ctrl-modal .simple-tool.client-server > div.cols:nth-of-type(2) > div:nth-child(2) {
+                display: flex;
+                height: 30px;
+                flex: 0;
+            }
+        </style>
+        <div class="cols">
+            <div>
+                <div class="o">Target A&zwnj;ddress</div>
+                <div class="m">IP A&zwnj;ddress, Hostname or Node</div>
+            </div>
+            <div>
+                <input id="tool-target" type="text" size="40" required list="mesh-nodes">
+                <button id="target-swap"><div class="icon updownarrow"></div></button>
+            </div>
+        </div>
+        <div class="cols">
+            <div>
+                <div class="o">Source A&zwnj;ddress</div>
+                <div class="m">Node with stableroute installed</div>
+            </div>
+            <div>
+                <input id="tool-client" type="text" size="40" required value="{{mynode}}" list="mesh-nodes">
+                <div id="target-swap-dummy" style="width:42px"></div>
+            </div>
+        </div>
+        <div class="cols" style="flex-wrap:nowrap;align-items:center">
+            <div style="display:flex;align-items:center;gap:8px;flex:1 1 auto;flex-wrap:nowrap;min-width:0">
+                <div class="o" style="flex:0 0 auto;margin:0">Runs</div>
+                <input id="tool-runs" type="number" min="1" max="100" value="10" style="width:5em;flex:0 0 auto">
+                <span style="font-size:0.85em;opacity:0.75;white-space:nowrap;flex:0 0 auto">(Error will occur if all runs take longer than 200s)</span>
+            </div>
+            <div style="flex:0 0 auto">
+                <div id="target-swap-dummy2" style="width:42px"></div>
+            </div>
+        </div>
+        <div class="cols">
+            <div>
+                <div class="o">
+                    <label title="Use original traceroute" style="display:inline-flex;align-items:center;gap:8px;{{hasArednTraceroute ? "" : "opacity:0.55;cursor:not-allowed"}}">
+                        <input id="tool-legacy" type="checkbox" title="Use original traceroute" {{hasArednTraceroute ? "" : "checked disabled"}}>
+                        Use Legacy Traceroute
+                    </label>
+                </div>
+            </div>
+            <div style="display:flex;align-items:center;gap:8px">
+                <label title="Show raw traceroute lines vs parse keep/drop per run" style="display:inline-flex;align-items:center;gap:8px">
+                    <input id="tool-debug" type="checkbox" title="Show raw traceroute lines vs parse keep/drop per run">
+                    Debug
+                </label>
+                <div id="target-swap-dummy3" style="width:42px"></div>
+            </div>
+        </div>
+        <datalist id="mesh-nodes">
+            <option value="{{mynode}}">{{mynode}}</option>
+            {%
+                for (let i = 0; i < length(nodes); i++) {
+                    const nn = nodes[i].name;
+                    if (nn !== mynode) {
+                        print(`<option value="${nn}">${nn}</option>`);
+                    }
+                }
+            %}
+        </datalist>
+        {{_H("Run traceroute repeatedly between a source node and a target, then group identical hop paths.
+        The source must have the stableroute package installed (by default this node). Long reports scroll in the console.")}}
+        <div class="cols">
+            <div class="tool-console stableroute">
+                <pre></pre>
+            </div>
+            <div>
+                <button id="tool-start">Go</button>
+            </div>
+        </div>
+    </div>
+    {{_R("tool-footer")}}
+    <script>
+    (function(){
+        {{_R("open")}}
+        const LS_TARGET = "stableroute.lastTarget";
+        function saveTarget(v) {
+            try {
+                if (v) {
+                    localStorage.setItem(LS_TARGET, v);
+                }
+            }
+            catch (_) {}
+        }
+        function loadTarget() {
+            try {
+                return localStorage.getItem(LS_TARGET) || "";
+            }
+            catch (_) {
+                return "";
+            }
+        }
+        const lastTarget = loadTarget();
+        if (lastTarget) {
+            htmx.find("#tool-target").value = lastTarget;
+        }
+        {% if (!request.mobile) { %}
+        htmx.find("#tool-target").focus();
+        {% } %}
+        htmx.on("#tool-target", "change", _ => {
+            saveTarget(htmx.find("#tool-target").value.trim());
+        });
+        htmx.on("#target-swap", "click", _ => {
+            const v = htmx.find("#tool-target").value;
+            htmx.find("#tool-target").value = htmx.find("#tool-client").value;
+            htmx.find("#tool-client").value = v;
+            saveTarget(htmx.find("#tool-target").value.trim());
+        });
+        htmx.on("#tool-start", "click", async _ => {
+            const server = htmx.find("#tool-target").value;
+            const client = htmx.find("#tool-client").value;
+            let runs = parseInt(htmx.find("#tool-runs").value, 10);
+            if (!runs || runs < 1) runs = 10;
+            if (runs > 100) runs = 100;
+            const legacy = htmx.find("#tool-legacy").checked;
+            const debug = htmx.find("#tool-debug").checked;
+            if (server && client) {
+                saveTarget(server.trim());
+                const con = htmx.find(".tool-console.stableroute pre");
+                con.innerText = "";
+                function out(line) {
+                    const nearBottom = (con.scrollHeight - con.scrollTop - con.clientHeight) < 48;
+                    con.innerHTML += `${line}\n`;
+                    if (nearBottom) {
+                        con.scrollTop = con.scrollHeight;
+                    }
+                }
+                function outProgress(text) {
+                    // HTML console cannot honor \\r; rewrite one progress node instead.
+                    const nearBottom = (con.scrollHeight - con.scrollTop - con.clientHeight) < 48;
+                    let el = con.querySelector("[data-sr-progress]");
+                    if (!el) {
+                        el = document.createElement("span");
+                        el.setAttribute("data-sr-progress", "1");
+                        con.appendChild(el);
+                        con.appendChild(document.createTextNode("\n"));
+                    }
+                    el.textContent = text;
+                    if (nearBottom) {
+                        con.scrollTop = con.scrollHeight;
+                    }
+                }
+                function missingPackageMsg() {
+                    return `Error: node ${client} is missing stableroute package`;
+                }
+                function isMissingPackageText(t) {
+                    return /stableroute is not installed/i.test(t || "");
+                }
+                function outMissingPackage() {
+                    out(missingPackageMsg());
+                }
+                let state = "BEGIN";
+                let buf = "";
+                function handlePrintLine(line) {
+                    line = line.replace(/\r/g, "").trim();
+                    if (!line || line === "__sr_ka__") {
+                        return;
+                    }
+                    if (/^run [0-9]+\/[0-9]+/.test(line)) {
+                        outProgress(line.replace(/\s+$/, ""));
+                        return;
+                    }
+                    if (line === "</pre></body></html>") {
+                        state = "DONE";
+                        out("");
+                        out("StableRoute done");
+                        out("");
+                        out(Date().toString());
+                        return;
+                    }
+                    if (line.match(/^<body><pre>/)) {
+                        line = line.replace(/^<body><pre>/, "");
+                        if (!line) {
+                            return;
+                        }
+                    }
+                    const m = line.match(/^[0-9]+ +(.+\.local\.mesh) /);
+                    if (m) {
+                        line = line.replace(m[1], `<a href="http://${m[1]}">${m[1].replace(".local.mesh", "")}</a>`);
+                        out(line);
+                        return;
+                    }
+                    out(line);
+                }
+                function feed(text) {
+                    buf += text;
+                    for (;;) {
+                        const cr = buf.indexOf("\r");
+                        const nl = buf.indexOf("\n");
+                        if (cr < 0 && nl < 0) {
+                            break;
+                        }
+                        // Prefer newline; otherwise treat CR as in-place progress update.
+                        if (nl >= 0 && (cr < 0 || nl < cr)) {
+                            const line = buf.slice(0, nl);
+                            buf = buf.slice(nl + 1);
+                            if (state === "BEGIN") {
+                                const trimmed = line.trim();
+                                const m = trimmed.match(/<title>(.*)<\/title>/);
+                                if (m) {
+                                    if (m[1] === "SUCCESS") {
+                                        state = "PRINT";
+                                        out(`Source: ${client}`);
+                                        out(`Target: ${server}`);
+                                        out(`Runs: ${runs}${legacy ? " (legacy)" : ""}${debug ? " (debug)" : ""}`);
+                                        out("");
+                                    }
+                                    else {
+                                        state = "ERROR";
+                                        const em = trimmed.match(/<pre>(.*)<\/pre>/);
+                                        if (em) {
+                                            if (isMissingPackageText(em[1])) {
+                                                outMissingPackage();
+                                            }
+                                            else {
+                                                out(`ERROR: ${em[1]}`);
+                                            }
+                                            state = "DONE";
+                                        }
+                                    }
+                                }
+                            }
+                            else if (state === "PRINT") {
+                                handlePrintLine(line);
+                            }
+                            else if (state === "ERROR") {
+                                const em = line.trim().match(/<pre>(.*)<\/pre>/);
+                                if (em) {
+                                    if (isMissingPackageText(em[1])) {
+                                        outMissingPackage();
+                                    }
+                                    else {
+                                        out(`ERROR: ${em[1]}`);
+                                    }
+                                    state = "DONE";
+                                }
+                            }
+                        }
+                        else {
+                            const line = buf.slice(0, cr);
+                            buf = buf.slice(cr + 1);
+                            if (state === "PRINT") {
+                                const t = line.replace(/\r/g, "").trim();
+                                if (/^run [0-9]+\/[0-9]+/.test(t)) {
+                                    outProgress(t.replace(/\s+$/, ""));
+                                }
+                            }
+                        }
+                    }
+                }
+                const host = `${client}${client.indexOf(".") == -1 ? ".local.mesh" : ""}`;
+                try {
+                    const target = `${server}${server.indexOf(".") == -1 && !/^[0-9.]+$/.test(server) ? ".local.mesh" : ""}`;
+                    let url = `http://${host}/cgi-bin/stableroute?server=${encodeURIComponent(target)}&n=${runs}`;
+                    if (legacy) {
+                        url += "&legacy=1";
+                    }
+                    if (debug) {
+                        url += "&debug=1";
+                    }
+                    const r = await fetch(url);
+                    // Missing CGI is 404; cross-origin 404s often omit CORS and land in catch instead.
+                    if (r.status === 404) {
+                        outMissingPackage();
+                        return;
+                    }
+                    if (!r.ok) {
+                        throw new Error(`HTTP ${r.status}`);
+                    }
+                    if (!r.body) {
+                        throw new Error("empty response body");
+                    }
+                    const reader = r.body.getReader();
+                    const decoder = typeof TextDecoder !== "undefined" ? new TextDecoder("utf-8") : null;
+                    function decodeChunk(value) {
+                        // fromCharCode.apply throws on large debug chunks; TextDecoder does not.
+                        if (decoder) {
+                            return decoder.decode(value, { stream: true });
+                        }
+                        let s = "";
+                        const step = 8192;
+                        for (let i = 0; i < value.length; i += step) {
+                            s += String.fromCharCode.apply(null, value.subarray(i, Math.min(i + step, value.length)));
+                        }
+                        return s;
+                    }
+                    for (;;) {
+                        const { done, value } = await reader.read();
+                        if (done) {
+                            if (decoder) {
+                                feed(decoder.decode());
+                            }
+                            if (buf && state === "PRINT") {
+                                handlePrintLine(buf);
+                                buf = "";
+                            }
+                            if (state === "BEGIN") {
+                                // Reachable HTTP response but not a stableroute CGI page.
+                                outMissingPackage();
+                            }
+                            else if (state !== "DONE") {
+                                out("StableRoute Terminated.");
+                            }
+                            break;
+                        }
+                        feed(decodeChunk(value));
+                    }
+                }
+                catch (e) {
+                    // Remote node up but /cgi-bin/stableroute missing → browser CORS error.
+                    let nodeUp = false;
+                    try {
+                        const probe = await fetch(`http://${host}/cgi-bin/sysinfo.json`);
+                        nodeUp = !!(probe && probe.ok);
+                    }
+                    catch (_) {}
+                    if (nodeUp) {
+                        outMissingPackage();
+                        return;
+                    }
+                    const msg = e && e.message ? e.message : "";
+                    out(`StableRoute Failed.${msg ? ` ${msg}` : ""}`);
+                    out("(Long runs need progress keepalives; if this persists, try fewer Runs.)");
+                }
+            }
+        });
+    })();
+    </script>
+</div>

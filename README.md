@@ -18,14 +18,15 @@ Installs **Tools → StableRoute** (same style as Traceroute): target/source, ru
 count, legacy/debug checkboxes, and a scrollable console for long reports. Menu uses a
 custom offset-deck plane icon shipped by the package. The source node must have
 this package installed. CGI endpoint: `/cgi-bin/stableroute`.
-Install/upgrade restarts uhttpd so the Tools menu picks up the new entry
-(the admin UI preloads tools.ut at process start).
+Install hooks do **not** restart `uhttpd` (that killed Admin → Packages upload
+responses near ~90%). The menu entry is written to `tools.ut` on disk — reload
+the admin page or reopen Tools to see it.
 
 ## Install
 
-1. Build (or download) `stableroute-0.1.34-r0.apk`
+1. Build (or download) `stableroute-0.1.35-r0.apk`
 2. On the node: **Status → Packages** → upload / install with allow-untrusted  
-   or: `apk add --allow-untrusted stableroute-0.1.34-r0.apk`
+   or: `apk add --allow-untrusted stableroute-0.1.35-r0.apk`
 3. CLI: `stableroute <destination>`  
    Custom run count: `stableroute -n 20 <destination>`  
    Debug (raw vs parse): `stableroute -debug -n 3 <destination>`  
@@ -36,7 +37,7 @@ Install/upgrade restarts uhttpd so the Tools menu picks up the new entry
 ```sh
 chmod +x build.sh
 ./build.sh
-# → dist/stableroute-0.1.34-r0.apk
+# → dist/stableroute-0.1.35-r0.apk
 ```
 
 Uses a vendored copy of [kn6plv/MakeAPK](https://github.com/kn6plv/MakeAPK) (`tools/mkapk.py`). No OpenWrt buildroot required.
@@ -75,7 +76,7 @@ Unreachable / partial paths are still listed as unique paths (marked `[unreachab
 ## Example
 
 ```text
-stableroute(0.1.34-r0): destination nodec  runs 10
+stableroute(0.1.35-r0): destination nodec  runs 10
 using aredn-traceroute
 Summary:
   unique paths: 2

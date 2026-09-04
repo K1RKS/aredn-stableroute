@@ -93,3 +93,9 @@ remove_tools_menu() {
     remove_menu_entry
     remove_icon_css
 }
+
+# Do NOT restart uhttpd from package hooks.
+# Admin → Packages runs apk inside the live uhttpd request (upload POST or
+# download SSE). Restarting here (even "deferred") drops that connection, so
+# the UI hangs near completion (~90%). tools.ut is updated on disk; open Tools
+# again or reload the admin page to see the menu entry.

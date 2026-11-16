@@ -106,7 +106,6 @@ const hasArednTraceroute = !!fs.access("/usr/bin/aredn-traceroute");
         <hr/>
         <div style="display:flex;gap:8px;justify-content:flex-end;align-items:center;flex-wrap:wrap">
             <button id="tool-copy" type="button" disabled title="Copy console output" style="width:auto;min-width:4.5em;margin-left:0">Copy</button>
-            <button id="tool-copy-json" type="button" disabled title="Copy schemaVersion-1 JSON for this run" style="width:auto;min-width:6em;margin-left:0">Copy JSON</button>
             <button id="dialog-done" type="button" onclick="setTimeout(_ => document.getElementById('ctrl-modal').close(), 10)" style="width:auto;min-width:4.5em;margin-left:0">Done</button>
         </div>
     </div>
@@ -115,10 +114,6 @@ const hasArednTraceroute = !!fs.access("/usr/bin/aredn-traceroute");
         {{_R("open")}}
         const LS_TARGET = "stableroute.lastTarget";
         const btnCopy = htmx.find("#tool-copy");
-        const btnCopyJson = htmx.find("#tool-copy-json");
-        let lastJsonText = "";
-        let lastJsonUrl = "";
-        let jsonFetchGen = 0;
         function saveTarget(v) {
             try {
                 if (v) {
@@ -138,72 +133,9 @@ const hasArednTraceroute = !!fs.access("/usr/bin/aredn-traceroute");
         function setCopyEnabled(on) {
             btnCopy.disabled = !on;
         }
-        function setCopyJsonEnabled(on) {
-            btnCopyJson.disabled = !on;
-            if (!on) {
-                btnCopyJson.textContent = "Copy JSON";
-            }
-        }
         function resetCopyState() {
-            lastJsonText = "";
-            lastJsonUrl = "";
-            jsonFetchGen++;
             setCopyEnabled(false);
-            setCopyJsonEnabled(false);
             btnCopy.textContent = "Copy";
-            btnCopyJson.textContent = "Copy JSON";
-        }
-        /*
-         * Admin UI is plain http:// (not a secure context), so navigator.clipboard
-         * is usually missing. Body-level textarea + execCommand also fails inside
-         * <dialog> focus trap — copy looked successful but left the old clipboard
-         * contents. Prefer selecting an in-dialog source element, then textarea
-         * hosted on #ctrl-modal; only report Copied when execCommand/writeText ok.
-         */
-        async function copyToClipboard(text, btn, idleLabel, sourceEl) {
-            if (!text) {
-                return;
-            }
-            const label = idleLabel || btn.textContent;
-            let ok = false;
-            try {
-                if (window.isSecureContext && navigator.clipboard && navigator.clipboard.writeText) {
-                    await navigator.clipboard.writeText(text);
-                    ok = true;
-                }
-            }
-            catch (_) {}
-            if (!ok) {
-                try {
-                    const sel = window.getSelection();
-                    if (sourceEl && sel) {
-                        const range = document.createRange();
-                        range.selectNodeContents(sourceEl);
-                        sel.removeAllRanges();
-                        sel.addRange(range);
-                        ok = document.execCommand("copy");
-                        sel.removeAllRanges();
-                    }
-                    if (!ok) {
-                        const host = document.getElementById("ctrl-modal") || document.body;
-                        const ta = document.createElement("textarea");
-                        ta.value = text;
-                        ta.setAttribute("readonly", "");
-                        ta.style.cssText = "position:fixed;top:0;left:0;width:2em;height:2em;padding:0;border:0;opacity:0;";
-                        host.appendChild(ta);
-                        ta.focus();
-                        ta.select();
-                        ta.setSelectionRange(0, ta.value.length);
-                        ok = document.execCommand("copy");
-                        host.removeChild(ta);
-                    }
-                }
-                catch (_) {
-                    ok = false;
-                }
-            }
-            btn.textContent = ok ? "Copied" : "Failed";
-            setTimeout(() => { btn.textContent = label; }, 1200);
         }
         function consolePre() {
             return htmx.find(".tool-console.stableroute pre");
@@ -212,43 +144,36 @@ const hasArednTraceroute = !!fs.access("/usr/bin/aredn-traceroute");
             const con = consolePre();
             return (con && con.innerText) ? con.innerText.replace(/\s+$/, "") : "";
         }
-        async function fetchJsonReport(url, gen) {
-            btnCopyJson.textContent = "Fetching…";
-            setCopyJsonEnabled(false);
+        /*
+         * Copy the result console the same way a manual select + copy works:
+         * selectNodeContents(pre) then execCommand('copy'). Must stay synchronous
+         * (no async/await) to keep the user-activation gesture. stopPropagation
+         * so #ctrl-modal's click handler does not focus body and clear the selection.
+         */
+        function copyConsoleToClipboard() {
+            const pre = consolePre();
+            const text = consoleText();
+            if (!pre || !text) {
+                return;
+            }
+            let ok = false;
             try {
-                const r = await fetch(url);
-                if (gen !== jsonFetchGen) {
-                    return;
+                if (!pre.hasAttribute("tabindex")) {
+                    pre.setAttribute("tabindex", "-1");
                 }
-                if (!r.ok) {
-                    throw new Error(`HTTP ${r.status}`);
-                }
-                const raw = (await r.text()).trim();
-                if (!raw) {
-                    throw new Error("empty JSON");
-                }
-                // Pretty-print when valid; otherwise keep raw body.
-                let pretty = raw;
-                try {
-                    pretty = JSON.stringify(JSON.parse(raw), null, 2);
-                }
-                catch (_) {}
-                if (gen !== jsonFetchGen) {
-                    return;
-                }
-                lastJsonText = pretty;
-                lastJsonUrl = url;
-                btnCopyJson.textContent = "Copy JSON";
-                setCopyJsonEnabled(true);
+                pre.focus();
+                const sel = window.getSelection();
+                const range = document.createRange();
+                range.selectNodeContents(pre);
+                sel.removeAllRanges();
+                sel.addRange(range);
+                ok = document.execCommand("copy");
             }
             catch (_) {
-                if (gen !== jsonFetchGen) {
-                    return;
-                }
-                lastJsonText = "";
-                btnCopyJson.textContent = "Copy JSON";
-                setCopyJsonEnabled(false);
+                ok = false;
             }
+            btnCopy.textContent = ok ? "Copied" : "Failed";
+            setTimeout(() => { btnCopy.textContent = "Copy"; }, 1200);
         }
         const lastTarget = loadTarget();
         if (lastTarget) {
@@ -266,16 +191,10 @@ const hasArednTraceroute = !!fs.access("/usr/bin/aredn-traceroute");
             htmx.find("#tool-client").value = v;
             saveTarget(htmx.find("#tool-target").value.trim());
         });
-        htmx.on("#tool-copy", "click", async _ => {
-            await copyToClipboard(consoleText(), btnCopy, "Copy", consolePre());
-        });
-        htmx.on("#tool-copy-json", "click", async _ => {
-            if (!lastJsonText && lastJsonUrl) {
-                await fetchJsonReport(lastJsonUrl, jsonFetchGen);
-            }
-            if (lastJsonText) {
-                await copyToClipboard(lastJsonText, btnCopyJson, "Copy JSON", null);
-            }
+        btnCopy.addEventListener("click", function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            copyConsoleToClipboard();
         });
         htmx.on("#tool-start", "click", async _ => {
             const server = htmx.find("#tool-target").value;
@@ -290,7 +209,6 @@ const hasArednTraceroute = !!fs.access("/usr/bin/aredn-traceroute");
                 resetCopyState();
                 const con = htmx.find(".tool-console.stableroute pre");
                 con.innerText = "";
-                let runOk = false;
                 function out(line) {
                     const nearBottom = (con.scrollHeight - con.scrollTop - con.clientHeight) < 48;
                     con.innerHTML += `${line}\n`;
@@ -326,10 +244,6 @@ const hasArednTraceroute = !!fs.access("/usr/bin/aredn-traceroute");
                     if (consoleText()) {
                         setCopyEnabled(true);
                     }
-                    // JSON is fetched on demand (second probe pass) when Copy JSON is clicked.
-                    if (runOk && lastJsonUrl) {
-                        setCopyJsonEnabled(true);
-                    }
                 }
                 let state = "BEGIN";
                 let buf = "";
@@ -344,7 +258,6 @@ const hasArednTraceroute = !!fs.access("/usr/bin/aredn-traceroute");
                     }
                     if (line === "</pre></body></html>") {
                         state = "DONE";
-                        runOk = true;
                         out("");
                         out("StableRoute done");
                         out("");
@@ -441,12 +354,6 @@ const hasArednTraceroute = !!fs.access("/usr/bin/aredn-traceroute");
                     if (debug) {
                         url += "&debug=1";
                     }
-                    // JSON export omits debug noise; same target/runs/legacy.
-                    let jsonUrl = `http://${host}/cgi-bin/stableroute?server=${encodeURIComponent(target)}&n=${runs}&format=json`;
-                    if (legacy) {
-                        jsonUrl += "&legacy=1";
-                    }
-                    lastJsonUrl = jsonUrl;
                     const r = await fetch(url);
                     // Missing CGI is 404; cross-origin 404s often omit CORS and land in catch instead.
                     if (r.status === 404) {

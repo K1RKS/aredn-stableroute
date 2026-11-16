@@ -2,5 +2,7 @@
 # Remove Tools → StableRoute menu entry before package files are removed.
 . /usr/share/stableroute/tools-menu.sh 2>/dev/null || exit 0
 remove_tools_menu
-# Intentionally no uhttpd restart — see tools-menu.sh.
+# Schedule delayed restart now (helper still on disk). Upgrade's .post-upgrade
+# clears the intent and reschedules; pure remove lets this one run.
+schedule_uhttpd_after_uninstall 10
 exit 0

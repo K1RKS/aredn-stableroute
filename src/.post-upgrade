@@ -4,5 +4,7 @@
 install_tools_menu
 chmod 755 /www/cgi-bin/stableroute 2>/dev/null || true
 chmod 644 /app/main/tools/e/stableroute.ut 2>/dev/null || true
-# Intentionally no uhttpd restart — see tools-menu.sh.
+chmod 755 /usr/share/stableroute/uhttpd-delay-run.sh 2>/dev/null || true
+# Cancels any uninstall-scheduled restart from .pre-deinstall, then reschedules.
+schedule_uhttpd_after_install 5
 exit 0

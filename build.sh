@@ -7,13 +7,14 @@ chmod +x \
   src/usr/bin/stableroute \
   src/www/cgi-bin/stableroute \
   src/usr/share/stableroute/tools-menu.sh \
+  src/usr/share/stableroute/uhttpd-delay-run.sh \
   src/.post-install \
   src/.post-upgrade \
   src/.pre-deinstall \
   tools/mkapk.py
 python3 tools/mkapk.py \
   -n stableroute \
-  -v 0.1.36 \
+  -v 0.1.37 \
   -r r0 \
   -a noarch \
   -d src \

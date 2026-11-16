@@ -94,8 +94,35 @@ remove_tools_menu() {
     remove_icon_css
 }
 
-# Do NOT restart uhttpd from package hooks.
-# Admin → Packages runs apk inside the live uhttpd request (upload POST or
-# download SSE). Restarting here (even "deferred") drops that connection, so
-# the UI hangs near completion (~90%). tools.ut is updated on disk; open Tools
-# again or reload the admin page to see the menu entry.
+# Delayed uhttpd restart so Tools pageCache picks up tools.ut changes.
+# Admin → Packages runs apk inside the live uhttpd request. A synchronous
+# restart (or a plain `sleep N; restart &`) still drops that response near
+# ~90% — apk waits on the hook's process group. Use setsid + a helper so the
+# sleeper is fully detached and the GUI can report "completed" first.
+SR_UHTTPD_DELAY_PID=/var/run/stableroute-uhttpd-delay.pid
+SR_UHTTPD_INTENT=/tmp/stableroute-uhttpd-needed
+SR_UHTTPD_HELPER=/usr/share/stableroute/uhttpd-delay-run.sh
+
+cancel_delayed_uhttpd() {
+    if [ -f "$SR_UHTTPD_DELAY_PID" ]; then
+        opid=$(cat "$SR_UHTTPD_DELAY_PID" 2>/dev/null)
+        [ -n "$opid" ] && kill "$opid" 2>/dev/null || true
+        rm -f "$SR_UHTTPD_DELAY_PID"
+    fi
+}
+
+schedule_uhttpd_after_uninstall() {
+    delay="${1:-10}"
+    touch "$SR_UHTTPD_INTENT"
+    cancel_delayed_uhttpd
+    [ -x "$SR_UHTTPD_HELPER" ] || return 0
+    setsid "$SR_UHTTPD_HELPER" uninstall "$delay" </dev/null >/dev/null 2>&1 &
+}
+
+schedule_uhttpd_after_install() {
+    delay="${1:-5}"
+    rm -f "$SR_UHTTPD_INTENT"
+    cancel_delayed_uhttpd
+    [ -x "$SR_UHTTPD_HELPER" ] || return 0
+    setsid "$SR_UHTTPD_HELPER" install "$delay" </dev/null >/dev/null 2>&1 &
+}

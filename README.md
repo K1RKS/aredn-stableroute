@@ -27,9 +27,9 @@ restart hung the upload UI near ~90%. That restart clears the admin Tools
 
 ## Install
 
-1. Build (or download) `stableroute-0.1.41-r0.apk`
+1. Build (or download) `stableroute-0.1.42-r0.apk`
 2. On the node: **Status → Packages** → upload / install with allow-untrusted  
-   or: `apk add --allow-untrusted stableroute-0.1.41-r0.apk`
+   or: `apk add --allow-untrusted stableroute-0.1.42-r0.apk`
 3. CLI: `stableroute <destination>`  
    Custom run count: `stableroute -n 20 <destination>`  
    Debug (raw vs parse): `stableroute -debug -n 3 <destination>`  
@@ -42,7 +42,7 @@ restart hung the upload UI near ~90%. That restart clears the admin Tools
 ```sh
 chmod +x build.sh
 ./build.sh
-# → dist/stableroute-0.1.41-r0.apk
+# → dist/stableroute-0.1.42-r0.apk
 ```
 
 Uses a vendored copy of [kn6plv/MakeAPK](https://github.com/kn6plv/MakeAPK) (`tools/mkapk.py`). No OpenWrt buildroot required.

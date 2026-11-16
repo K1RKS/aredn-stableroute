@@ -7,7 +7,7 @@ import * as fs from "fs";
 /* Keep in sync with build.sh -v/-r (and bump-stableroute-revision rule). */
 export function packageVersion()
 {
-    return "0.1.41-r0";
+    return "0.1.42-r0";
 };
 
 const AREDN_TRACEROUTE = "/usr/bin/aredn-traceroute";
@@ -461,6 +461,27 @@ export function formatReport(agg)
     return join("\n", lines) + "\n";
 };
 
+// Must be defined before hopJsonFromAgg — ucode does not hoist function decls.
+function rttStatsNumbers(samples)
+{
+    if (!samples || length(samples) === 0) {
+        return { avg: null, dev: null };
+    }
+    let sum = 0;
+    for (let i = 0; i < length(samples); i++) {
+        sum += samples[i];
+    }
+    const avg = sum / length(samples);
+    let maxDev = 0;
+    for (let i = 0; i < length(samples); i++) {
+        const d = absDiff(samples[i], avg);
+        if (d > maxDev) {
+            maxDev = d;
+        }
+    }
+    return { avg: roundMs(avg), dev: roundMs(maxDev) };
+};
+
 function hopJsonFromAgg(hop, rttSamples)
 {
     const stats = rttStatsNumbers(rttSamples);
@@ -490,26 +511,6 @@ function hopJsonFromAgg(hop, rttSamples)
         lon: null,
         unreachable: false
     };
-};
-
-function rttStatsNumbers(samples)
-{
-    if (!samples || length(samples) === 0) {
-        return { avg: null, dev: null };
-    }
-    let sum = 0;
-    for (let i = 0; i < length(samples); i++) {
-        sum += samples[i];
-    }
-    const avg = sum / length(samples);
-    let maxDev = 0;
-    for (let i = 0; i < length(samples); i++) {
-        const d = absDiff(samples[i], avg);
-        if (d > maxDev) {
-            maxDev = d;
-        }
-    }
-    return { avg: roundMs(avg), dev: roundMs(maxDev) };
 };
 
 /**

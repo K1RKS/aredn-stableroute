@@ -7,7 +7,7 @@ import * as fs from "fs";
 /* Keep in sync with build.sh -v/-r (and bump-stableroute-revision rule). */
 export function packageVersion()
 {
-    return "0.1.35-r0";
+    return "0.1.36-r0";
 };
 
 const AREDN_TRACEROUTE = "/usr/bin/aredn-traceroute";
@@ -461,6 +461,100 @@ export function formatReport(agg)
     return join("\n", lines) + "\n";
 };
 
+function hopJsonFromAgg(hop, rttSamples)
+{
+    const stats = rttStatsNumbers(rttSamples);
+    if (!hop || hop.unreachable) {
+        return {
+            hop: hop ? hop.hop : null,
+            hostname: null,
+            ip: null,
+            linkType: null,
+            rttMs: null,
+            rttAvgMs: stats.avg,
+            rttDevMs: stats.dev,
+            lat: null,
+            lon: null,
+            unreachable: true
+        };
+    }
+    return {
+        hop: hop.hop,
+        hostname: shortMeshName(hop.hostname),
+        ip: hop.ip || null,
+        linkType: hop.linkType || null,
+        rttMs: stats.avg,
+        rttAvgMs: stats.avg,
+        rttDevMs: stats.dev,
+        lat: null,
+        lon: null,
+        unreachable: false
+    };
+};
+
+function rttStatsNumbers(samples)
+{
+    if (!samples || length(samples) === 0) {
+        return { avg: null, dev: null };
+    }
+    let sum = 0;
+    for (let i = 0; i < length(samples); i++) {
+        sum += samples[i];
+    }
+    const avg = sum / length(samples);
+    let maxDev = 0;
+    for (let i = 0; i < length(samples); i++) {
+        const d = absDiff(samples[i], avg);
+        if (d > maxDev) {
+            maxDev = d;
+        }
+    }
+    return { avg: roundMs(avg), dev: roundMs(maxDev) };
+};
+
+/**
+ * schemaVersion-1 JSON document shared with aredn-traceroute / Nodographer.
+ */
+export function formatReportJson(agg)
+{
+    const n = agg.runs;
+    const pathsIn = agg.paths || [];
+    const paths = [];
+    for (let p = 0; p < length(pathsIn); p++) {
+        const path = pathsIn[p];
+        const hopsIn = path.hops || [];
+        const hops = [];
+        for (let i = 0; i < length(hopsIn); i++) {
+            push(hops, hopJsonFromAgg(hopsIn[i], path.rtts ? path.rtts[i] : null));
+        }
+        push(paths, {
+            index: p + 1,
+            key: path.key,
+            count: path.count,
+            reached: !!path.reached,
+            hops: hops
+        });
+    }
+    const top = length(paths) > 0 ? paths[0] : null;
+    return {
+        schemaVersion: 1,
+        tool: "stableroute",
+        version: packageVersion(),
+        destination: shortMeshName(agg.dest),
+        source: null,
+        using: agg.using || "using traceroute",
+        runs: n,
+        summary: {
+            uniquePaths: length(paths),
+            shortest: agg.shortest,
+            longest: agg.longest,
+            unreachable: agg.unreachable,
+            mostCommonCount: top ? top.count : 0
+        },
+        paths: paths
+    };
+};
+
 /**
  * Format per-run raw vs parse debug for one traceroute result.
  */
@@ -519,12 +613,13 @@ export function formatDebugRun(runIndex, runCount, one)
  * options.debug: when true, prepend per-run raw vs parse dump.
  * options.legacy: force stock /bin/traceroute even if aredn-traceroute is present.
  * options.progress: print/flush status after each run (keeps CGI connections alive).
- * Returns { ok, text }.
+ * options.json: when true, also set doc to schemaVersion-1 JSON (text still filled).
+ * Returns { ok, text, doc }.
  */
 export function runStableRoute(dest, n, options)
 {
     if (!dest) {
-        return { ok: false, text: "No destination\n" };
+        return { ok: false, text: "No destination\n", doc: null };
     }
     dest = normalizeDest(dest);
     if (n == null || n < 1) {
@@ -534,12 +629,14 @@ export function runStableRoute(dest, n, options)
     if (!destIsResolvable(dest)) {
         return {
             ok: false,
-            text: `Error: ${shortMeshName(dest)} is unreachable or invalid\n`
+            text: `Error: ${shortMeshName(dest)} is unreachable or invalid\n`,
+            doc: null
         };
     }
     const debug = !!(options && options.debug);
     const legacy = !!(options && options.legacy);
     const progress = !!(options && options.progress);
+    const wantJson = !!(options && options.json);
     const probe = selectProbe(legacy);
     const runs = [];
     let anyOk = false;
@@ -554,13 +651,13 @@ export function runStableRoute(dest, n, options)
         flush();
     }
 
-    if (progress) {
+    if (progress && !wantJson) {
         writeProgress(`probing ${n} run${n === 1 ? "" : "s"} (${probe.using})\n`);
     }
     for (let i = 0; i < n; i++) {
         // Emit at run start (and on each hop below) so a slow traceroute cannot
         // idle past uhttpd network_timeout (~30s) between keepalives.
-        if (progress) {
+        if (progress && !wantJson) {
             if (progressNl) {
                 writeProgress(`run ${i + 1}/${n}\n`);
             }
@@ -568,7 +665,7 @@ export function runStableRoute(dest, n, options)
                 writeProgress(`\rrun ${i + 1}/${n}    `);
             }
         }
-        const one = runOneTraceroute(dest, probe.cmd, progress ? function () {
+        const one = runOneTraceroute(dest, probe.cmd, (progress && !wantJson) ? function () {
             if (progressNl) {
                 writeProgress(`run ${i + 1}/${n}\n`);
             }
@@ -584,7 +681,7 @@ export function runStableRoute(dest, n, options)
         }
         push(runs, one);
     }
-    if (progress && !progressNl) {
+    if (progress && !progressNl && !wantJson) {
         writeProgress("\n");
     }
     const agg = aggregateRuns(dest, runs);
@@ -593,5 +690,6 @@ export function runStableRoute(dest, n, options)
     if (debug) {
         text = join("\n", debugParts) + "=== REPORT ===\n" + text;
     }
-    return { ok: anyOk, text: text };
+    const doc = wantJson ? formatReportJson(agg) : null;
+    return { ok: anyOk, text: text, doc: doc };
 };

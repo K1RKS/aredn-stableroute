@@ -24,28 +24,39 @@ the admin page or reopen Tools to see it.
 
 ## Install
 
-1. Build (or download) `stableroute-0.1.35-r0.apk`
+1. Build (or download) `stableroute-0.1.36-r0.apk`
 2. On the node: **Status → Packages** → upload / install with allow-untrusted  
-   or: `apk add --allow-untrusted stableroute-0.1.35-r0.apk`
+   or: `apk add --allow-untrusted stableroute-0.1.36-r0.apk`
 3. CLI: `stableroute <destination>`  
    Custom run count: `stableroute -n 20 <destination>`  
    Debug (raw vs parse): `stableroute -debug -n 3 <destination>`  
-   Force stock traceroute: `stableroute -legacy <destination>`
+   Force stock traceroute: `stableroute -legacy <destination>`  
+   JSON (schemaVersion 1): `stableroute -json -n 10 <destination>`  
+   CGI JSON: `/cgi-bin/stableroute?server=<dest>&n=10&format=json`
 
 ## Build
 
 ```sh
 chmod +x build.sh
 ./build.sh
-# → dist/stableroute-0.1.35-r0.apk
+# → dist/stableroute-0.1.36-r0.apk
 ```
 
 Uses a vendored copy of [kn6plv/MakeAPK](https://github.com/kn6plv/MakeAPK) (`tools/mkapk.py`). No OpenWrt buildroot required.
 
+## JSON export (`-json` / `format=json`)
+
+Emits a `schemaVersion: 1` document shared with aredn-traceroute and Nodographer visual traceroute:
+
+- `tool`: `"stableroute"`
+- `summary`: uniquePaths / shortest / longest / unreachable / mostCommonCount
+- `paths[]`: each unique hop sequence with `count`, `reached`, and `hops[]` (`rttAvgMs` / `rttDevMs`)
+- Text report remains the default for Tools → StableRoute
+
 ## Usage
 
 ```text
-Usage: stableroute [-n N] [-debug] [-legacy] [-noprogress] <destination>
+Usage: stableroute [-n N] [-debug] [-legacy] [-noprogress] [-json] <destination>
   Run traceroute N times (default 10), group identical hop paths, report stability.
 ```
 

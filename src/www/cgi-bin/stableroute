@@ -1,13 +1,16 @@
 #!/usr/bin/ucode
 /*
  * StableRoute CGI — run /usr/bin/stableroute and stream the report.
- * Query: server=<dest>&n=<runs>&legacy=1&debug=1
+ * Query: server=<dest>&n=<runs>&legacy=1&debug=1&format=json
  *
  * uhttpd network_timeout is ~30s idle. A background keepalive beats that while
  * a single traceroute is silent between hops (LQM stalls, long paths, etc.).
+ * JSON mode waits for the full report (no progressive keepalives in the body).
  */
 
 import * as fs from "fs";
+import * as sr from "stableroute";
+import * as configuration from "aredn.configuration";
 
 const q = getenv("QUERY_STRING") || "";
 
@@ -17,23 +20,88 @@ const mN = match(q, /n=([0-9]+)/);
 let n = mN ? int(mN[1]) : 10;
 const legacy = match(q, /legacy=1/) ? true : false;
 const debug = match(q, /debug=1/) ? true : false;
+const wantJson = match(q, /(^|&)format=json(&|$)/) ? true : false;
 
-print("Content-type: text/html\r\n");
+if (wantJson) {
+    print("Content-type: application/json\r\n");
+}
+else {
+    print("Content-type: text/html\r\n");
+}
 print("Cache-Control: no-store\r\n");
 print("Access-Control-Allow-Origin: *\r\n");
 print("\r\n");
 
 if (!server) {
-    print("<html><head><title>ERROR</title></head><body><pre>Provide a target [/cgi-bin/stableroute?server=&lt;Target&gt;]</pre></body></html>\n");
+    if (wantJson) {
+        print(sprintf("%J\n", {
+            schemaVersion: 1,
+            tool: "stableroute",
+            error: "Provide a target [/cgi-bin/stableroute?server=<Target>&format=json]"
+        }));
+    }
+    else {
+        print("<html><head><title>ERROR</title></head><body><pre>Provide a target [/cgi-bin/stableroute?server=&lt;Target&gt;]</pre></body></html>\n");
+    }
 }
 else if (match(server, /[^0-9a-zA-Z.\-]/)) {
-    print("<html><head><title>ERROR</title></head><body><pre>Illegal target name</pre></body></html>\n");
+    if (wantJson) {
+        print(sprintf("%J\n", {
+            schemaVersion: 1,
+            tool: "stableroute",
+            error: "Illegal target name"
+        }));
+    }
+    else {
+        print("<html><head><title>ERROR</title></head><body><pre>Illegal target name</pre></body></html>\n");
+    }
 }
 else if (n < 1 || n > 100) {
-    print("<html><head><title>ERROR</title></head><body><pre>n must be between 1 and 100</pre></body></html>\n");
+    if (wantJson) {
+        print(sprintf("%J\n", {
+            schemaVersion: 1,
+            tool: "stableroute",
+            error: "n must be between 1 and 100"
+        }));
+    }
+    else {
+        print("<html><head><title>ERROR</title></head><body><pre>n must be between 1 and 100</pre></body></html>\n");
+    }
 }
 else if (!fs.access("/usr/bin/stableroute")) {
-    print("<html><head><title>ERROR</title></head><body><pre>stableroute is not installed on this node</pre></body></html>\n");
+    if (wantJson) {
+        print(sprintf("%J\n", {
+            schemaVersion: 1,
+            tool: "stableroute",
+            error: "stableroute is not installed on this node"
+        }));
+    }
+    else {
+        print("<html><head><title>ERROR</title></head><body><pre>stableroute is not installed on this node</pre></body></html>\n");
+    }
+}
+else if (wantJson) {
+    if (!match(server, /\./) && !match(server, /^[0-9.]+$/)) {
+        server += ".local.mesh";
+    }
+    const result = sr.runStableRoute(server, n, {
+        legacy: legacy,
+        debug: false,
+        progress: false,
+        json: true
+    });
+    let doc = result.doc;
+    if (!doc) {
+        doc = {
+            schemaVersion: 1,
+            tool: "stableroute",
+            error: trim(result.text || "stableroute failed")
+        };
+    }
+    else {
+        doc.source = sr.shortMeshName(configuration.getName() || null);
+    }
+    print(sprintf("%J\n", doc));
 }
 else {
     if (!match(server, /\./) && !match(server, /^[0-9.]+$/)) {

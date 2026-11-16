@@ -7,7 +7,7 @@ import * as sr from "stableroute";
 
 function usage()
 {
-    print("Usage: stableroute [-n N] [-debug] [-legacy] [-noprogress] <destination>\n");
+    print("Usage: stableroute [-n N] [-debug] [-legacy] [-noprogress] [-json] <destination>\n");
     print("  Run traceroute N times (default 10), group identical hop paths, report stability.\n");
     print("  Path identity is the full ordered hop list (hostname/IP/*); RTT does not affect equality.\n");
     print("  Per-hop timing is reported as avg Xms +- Yms (Y = max |rtt - avg|).\n");
@@ -20,6 +20,7 @@ function usage()
     print("  -legacy      Force stock /bin/traceroute even if aredn-traceroute is present\n");
     print("  -noprogress  Do not print run x/N status while probing\n");
     print("  -progress    Print run status (default; kept for compatibility)\n");
+    print("  -json        Emit schemaVersion-1 JSON (for meshmap / meshinfo)\n");
     print("  -h           Show this help\n");
 };
 
@@ -27,6 +28,7 @@ let runs = 10;
 let debug = false;
 let legacy = false;
 let progress = true;
+let wantJson = false;
 let dest = null;
 for (let i = 0; i < length(ARGV); i++) {
     const a = ARGV[i];
@@ -48,6 +50,10 @@ for (let i = 0; i < length(ARGV); i++) {
     }
     if (a === "-noprogress" || a === "--noprogress") {
         progress = false;
+        continue;
+    }
+    if (a === "-json" || a === "--json") {
+        wantJson = true;
         continue;
     }
     if (a === "-n" || a === "--runs") {
@@ -100,6 +106,25 @@ if (match(dest, /[^0-9a-zA-Z.\-]/)) {
     exit(1);
 }
 
-const result = sr.runStableRoute(dest, runs, { debug: debug, legacy: legacy, progress: progress });
-print(result.text);
+const result = sr.runStableRoute(dest, runs, {
+    debug: debug,
+    legacy: legacy,
+    progress: wantJson ? false : progress,
+    json: wantJson
+});
+if (wantJson) {
+    if (result.doc) {
+        print(sprintf("%J\n", result.doc));
+    }
+    else {
+        print(sprintf("%J\n", {
+            schemaVersion: 1,
+            tool: "stableroute",
+            error: trim(result.text || "stableroute failed")
+        }));
+    }
+}
+else {
+    print(result.text);
+}
 exit(result.ok ? 0 : 1);

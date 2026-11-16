@@ -153,36 +153,63 @@ const hasArednTraceroute = !!fs.access("/usr/bin/aredn-traceroute");
             btnCopy.textContent = "Copy";
             btnCopyJson.textContent = "Copy JSON";
         }
-        async function copyToClipboard(text, btn, idleLabel) {
+        /*
+         * Admin UI is plain http:// (not a secure context), so navigator.clipboard
+         * is usually missing. Body-level textarea + execCommand also fails inside
+         * <dialog> focus trap — copy looked successful but left the old clipboard
+         * contents. Prefer selecting an in-dialog source element, then textarea
+         * hosted on #ctrl-modal; only report Copied when execCommand/writeText ok.
+         */
+        async function copyToClipboard(text, btn, idleLabel, sourceEl) {
             if (!text) {
                 return;
             }
             const label = idleLabel || btn.textContent;
+            let ok = false;
             try {
-                if (navigator.clipboard && navigator.clipboard.writeText) {
+                if (window.isSecureContext && navigator.clipboard && navigator.clipboard.writeText) {
                     await navigator.clipboard.writeText(text);
+                    ok = true;
                 }
-                else {
-                    const ta = document.createElement("textarea");
-                    ta.value = text;
-                    ta.setAttribute("readonly", "");
-                    ta.style.position = "fixed";
-                    ta.style.left = "-9999px";
-                    document.body.appendChild(ta);
-                    ta.select();
-                    document.execCommand("copy");
-                    ta.remove();
+            }
+            catch (_) {}
+            if (!ok) {
+                try {
+                    const sel = window.getSelection();
+                    if (sourceEl && sel) {
+                        const range = document.createRange();
+                        range.selectNodeContents(sourceEl);
+                        sel.removeAllRanges();
+                        sel.addRange(range);
+                        ok = document.execCommand("copy");
+                        sel.removeAllRanges();
+                    }
+                    if (!ok) {
+                        const host = document.getElementById("ctrl-modal") || document.body;
+                        const ta = document.createElement("textarea");
+                        ta.value = text;
+                        ta.setAttribute("readonly", "");
+                        ta.style.cssText = "position:fixed;top:0;left:0;width:2em;height:2em;padding:0;border:0;opacity:0;";
+                        host.appendChild(ta);
+                        ta.focus();
+                        ta.select();
+                        ta.setSelectionRange(0, ta.value.length);
+                        ok = document.execCommand("copy");
+                        host.removeChild(ta);
+                    }
                 }
-                btn.textContent = "Copied";
-                setTimeout(() => { btn.textContent = label; }, 1200);
+                catch (_) {
+                    ok = false;
+                }
             }
-            catch (_) {
-                btn.textContent = "Failed";
-                setTimeout(() => { btn.textContent = label; }, 1200);
-            }
+            btn.textContent = ok ? "Copied" : "Failed";
+            setTimeout(() => { btn.textContent = label; }, 1200);
+        }
+        function consolePre() {
+            return htmx.find(".tool-console.stableroute pre");
         }
         function consoleText() {
-            const con = htmx.find(".tool-console.stableroute pre");
+            const con = consolePre();
             return (con && con.innerText) ? con.innerText.replace(/\s+$/, "") : "";
         }
         async function fetchJsonReport(url, gen) {
@@ -240,14 +267,14 @@ const hasArednTraceroute = !!fs.access("/usr/bin/aredn-traceroute");
             saveTarget(htmx.find("#tool-target").value.trim());
         });
         htmx.on("#tool-copy", "click", async _ => {
-            await copyToClipboard(consoleText(), btnCopy, "Copy");
+            await copyToClipboard(consoleText(), btnCopy, "Copy", consolePre());
         });
         htmx.on("#tool-copy-json", "click", async _ => {
             if (!lastJsonText && lastJsonUrl) {
                 await fetchJsonReport(lastJsonUrl, jsonFetchGen);
             }
             if (lastJsonText) {
-                await copyToClipboard(lastJsonText, btnCopyJson, "Copy JSON");
+                await copyToClipboard(lastJsonText, btnCopyJson, "Copy JSON", null);
             }
         });
         htmx.on("#tool-start", "click", async _ => {

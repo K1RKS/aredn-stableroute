@@ -81,27 +81,62 @@ else if (!fs.access("/usr/bin/stableroute")) {
     }
 }
 else if (wantJson) {
+    /*
+     * Shell out to the CLI with -json. In-process runStableRoute under uhttpd
+     * was returning an empty body (likely a ucode abort during %J / long work).
+     * Keepalive beats network_timeout while probes run; filter __sr_ka__ lines.
+     */
     if (!match(server, /\./) && !match(server, /^[0-9.]+$/)) {
         server += ".local.mesh";
     }
-    const result = sr.runStableRoute(server, n, {
-        legacy: legacy,
-        debug: false,
-        progress: false,
-        json: true
-    });
-    let doc = result.doc;
-    if (!doc) {
-        doc = {
+    let args = `-json -noprogress -n ${n}`;
+    if (legacy) {
+        args += " -legacy";
+    }
+    const cmd = `sh -c 'while sleep 10; do echo __sr_ka__; done & KP=$!; /usr/bin/stableroute ${args} ${server}; EC=$?; kill $KP 2>/dev/null; wait $KP 2>/dev/null; exit $EC'`;
+    const running = fs.popen(`${cmd} 2>&1`);
+    if (!running) {
+        print(sprintf("%J\n", {
             schemaVersion: 1,
             tool: "stableroute",
-            error: trim(result.text || "stableroute failed")
-        };
+            error: "stableroute failed to start"
+        }));
     }
     else {
-        doc.source = sr.shortMeshName(configuration.getName() || null);
+        let out = "";
+        for (let line = running.read("line"); length(line); line = running.read("line")) {
+            if (match(line, /__sr_ka__/)) {
+                continue;
+            }
+            out += line;
+        }
+        running.close();
+        out = trim(out);
+        if (!out) {
+            print(sprintf("%J\n", {
+                schemaVersion: 1,
+                tool: "stableroute",
+                error: "stableroute returned no JSON"
+            }));
+        }
+        else {
+            /* Inject source if the CLI left it null. */
+            let src = null;
+            try {
+                src = sr.shortMeshName(configuration.getName() || null);
+            }
+            catch (e) {
+                src = null;
+            }
+            if (src && match(out, /"source":null/)) {
+                out = replace(out, /"source":null/, `"source":${sprintf("%J", src)}`);
+            }
+            print(out);
+            if (!match(out, /\n$/)) {
+                print("\n");
+            }
+        }
     }
-    print(sprintf("%J\n", doc));
 }
 else {
     if (!match(server, /\./) && !match(server, /^[0-9.]+$/)) {

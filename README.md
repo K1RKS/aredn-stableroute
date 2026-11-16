@@ -15,9 +15,12 @@ includes the incoming link type (DtD / RF / WG / Xlink).
 ## GUI
 
 Installs **Tools → StableRoute** (same style as Traceroute): target/source, run
-count, legacy/debug checkboxes, and a scrollable console for long reports. Menu uses a
-custom offset-deck plane icon shipped by the package. The source node must have
-this package installed. CGI endpoint: `/cgi-bin/stableroute`.
+count, legacy/debug checkboxes, and a scrollable console for long reports. After a
+run, **Copy** puts the console text on the clipboard; **Copy JSON** fetches
+`format=json` for the same target/runs and copies pretty-printed schemaVersion-1
+JSON (a second probe pass). Menu uses a custom offset-deck plane icon shipped by
+the package. The source node must have this package installed. CGI endpoint:
+`/cgi-bin/stableroute`.
 Install/upgrade/remove hooks schedule a **delayed** `uhttpd` restart (via
 `setsid`, ~5s after install / ~10s after remove) so Admin → Packages can finish
 reporting success before the server drops — a synchronous or plain-background
@@ -26,9 +29,9 @@ restart hung the upload UI near ~90%. That restart clears the admin Tools
 
 ## Install
 
-1. Build (or download) `stableroute-0.1.37-r0.apk`
+1. Build (or download) `stableroute-0.1.38-r0.apk`
 2. On the node: **Status → Packages** → upload / install with allow-untrusted  
-   or: `apk add --allow-untrusted stableroute-0.1.37-r0.apk`
+   or: `apk add --allow-untrusted stableroute-0.1.38-r0.apk`
 3. CLI: `stableroute <destination>`  
    Custom run count: `stableroute -n 20 <destination>`  
    Debug (raw vs parse): `stableroute -debug -n 3 <destination>`  
@@ -41,7 +44,7 @@ restart hung the upload UI near ~90%. That restart clears the admin Tools
 ```sh
 chmod +x build.sh
 ./build.sh
-# → dist/stableroute-0.1.37-r0.apk
+# → dist/stableroute-0.1.38-r0.apk
 ```
 
 Uses a vendored copy of [kn6plv/MakeAPK](https://github.com/kn6plv/MakeAPK) (`tools/mkapk.py`). No OpenWrt buildroot required.

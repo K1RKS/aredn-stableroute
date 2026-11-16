@@ -97,14 +97,19 @@ const hasArednTraceroute = !!fs.access("/usr/bin/aredn-traceroute");
             <div class="tool-console stableroute">
                 <pre></pre>
             </div>
-            <div style="display:flex;flex-direction:column;gap:6px;align-items:stretch">
-                <button id="tool-start">Go</button>
-                <button id="tool-copy" type="button" disabled title="Copy console output">Copy</button>
-                <button id="tool-copy-json" type="button" disabled title="Copy schemaVersion-1 JSON for this run">Copy JSON</button>
+            <div>
+                <button id="tool-start" type="button">Go</button>
             </div>
         </div>
     </div>
-    {{_R("tool-footer")}}
+    <div class="ctrl-modal-footer">
+        <hr/>
+        <div style="display:flex;gap:8px;justify-content:flex-end;align-items:center;flex-wrap:wrap">
+            <button id="tool-copy" type="button" disabled title="Copy console output" style="width:auto;min-width:4.5em;margin-left:0">Copy</button>
+            <button id="tool-copy-json" type="button" disabled title="Copy schemaVersion-1 JSON for this run" style="width:auto;min-width:6em;margin-left:0">Copy JSON</button>
+            <button id="dialog-done" type="button" onclick="setTimeout(_ => document.getElementById('ctrl-modal').close(), 10)" style="width:auto;min-width:4.5em;margin-left:0">Done</button>
+        </div>
+    </div>
     <script>
     (function(){
         {{_R("open")}}
